@@ -2,6 +2,7 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 import lzma
 import os
 import struct
+import zipfile
 from io import BytesIO
 
 app = Flask(__name__)
@@ -41,6 +42,15 @@ def extract_box(file):
     
     return extracted_files
 
+# 使用 zipfile 壓縮
+def create_zip(files):
+    zip_data = BytesIO()
+    with zipfile.ZipFile(zip_data, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for file in files:
+            zip_file.writestr(file.filename, file.read())
+    zip_data.seek(0)
+    return zip_data
+
 # 壓縮頁面
 @app.route('/')
 def index():
@@ -50,6 +60,11 @@ def index():
 @app.route('/decompress')
 def decompress_page():
     return render_template('decompress.html')
+
+# 比較頁面
+@app.route('/compare')
+def compare_page():
+    return render_template('compare.html')
 
 # 處理壓縮請求
 @app.route('/upload', methods=['POST'])
@@ -64,12 +79,9 @@ def upload_files():
         return redirect(request.url)
     
     try:
-        # 提取第一個文件的文件名作為 .box 檔案名
-        first_filename = os.path.splitext(files[0].filename)[0]  # 去掉擴展名
+        first_filename = os.path.splitext(files[0].filename)[0]
         
         compressed_data = create_box(files)
-        
-        # 使用 .box 擴展名
         box_filename = f"{first_filename}.box"
         
         return send_file(compressed_data, as_attachment=True, download_name=box_filename)
@@ -87,11 +99,36 @@ def extract_files():
     file = request.files['file']
     try:
         extracted_files = extract_box(file)
-        # 返回一個簡單的顯示文件名的頁面
         return render_template('extracted.html', files=extracted_files)
     except Exception as e:
         flash(f'解壓縮過程中出錯：{str(e)}')
         return redirect(url_for('decompress_page'))
 
+# 處理比較請求
+@app.route('/compare/upload', methods=['POST'])
+def compare_files():
+    if 'file' not in request.files:
+        flash('未選擇任何文件！')
+        return redirect(request.url)
+
+    files = request.files.getlist('file')
+    if not files:
+        flash('請選擇文件進行比較！')
+        return redirect(request.url)
+
+    try:
+        # 計算 .box 的大小
+        box_data = create_box(files)
+        box_size = len(box_data.getvalue())
+
+        # 計算 .zip 的大小
+        zip_data = create_zip(files)
+        zip_size = len(zip_data.getvalue())
+
+        return render_template('comparison_result.html', box_size=box_size, zip_size=zip_size)
+    except Exception as e:
+        flash(f'比較過程中出錯：{str(e)}')
+        return redirect(url_for('compare_page'))
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True,port=10000, host='0.0.0.0')
