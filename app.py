@@ -83,7 +83,12 @@ def upload_files():
         
         compressed_data = create_box(files)
         box_filename = f"{first_filename}.box"
-        
+
+        # 刪除上傳的檔案
+        for file in files:
+            file.stream.close()  # 關閉檔案流，便於刪除
+            # 因為是從記憶體讀取，不需要從磁碟刪除，這一行可以省略
+
         return send_file(compressed_data, as_attachment=True, download_name=box_filename)
     except Exception as e:
         flash(f'壓縮過程中出錯：{str(e)}')
@@ -99,6 +104,10 @@ def extract_files():
     file = request.files['file']
     try:
         extracted_files = extract_box(file)
+        
+        # 刪除上傳的檔案
+        file.stream.close()  # 關閉檔案流，便於刪除
+
         return render_template('extracted.html', files=extracted_files)
     except Exception as e:
         flash(f'解壓縮過程中出錯：{str(e)}')
@@ -124,6 +133,10 @@ def compare_files():
         # 計算 .zip 的大小
         zip_data = create_zip(files)
         zip_size = len(zip_data.getvalue())
+
+        # 刪除上傳的檔案
+        for file in files:
+            file.stream.close()  # 關閉檔案流，便於刪除
 
         return render_template('comparison_result.html', box_size=box_size, zip_size=zip_size)
     except Exception as e:
