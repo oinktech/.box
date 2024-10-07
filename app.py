@@ -64,8 +64,15 @@ def upload_files():
         return redirect(request.url)
     
     try:
+        # 提取第一個文件的文件名作為 .box 檔案名
+        first_filename = os.path.splitext(files[0].filename)[0]  # 去掉擴展名
+        
         compressed_data = create_box(files)
-        return send_file(compressed_data, as_attachment=True, download_name='compressed.box')
+        
+        # 使用 .box 擴展名
+        box_filename = f"{first_filename}.box"
+        
+        return send_file(compressed_data, as_attachment=True, download_name=box_filename)
     except Exception as e:
         flash(f'壓縮過程中出錯：{str(e)}')
         return redirect(url_for('index'))
@@ -87,4 +94,4 @@ def extract_files():
         return redirect(url_for('decompress_page'))
 
 if __name__ == '__main__':
-    app.run(debug=True,port=10000, host='0.0.0.0')
+    app.run(debug=True)
