@@ -2,7 +2,6 @@ from flask import Flask, render_template, request, redirect, url_for, flash, sen
 import lzma
 import os
 import struct
-import zipfile
 from io import BytesIO
 
 app = Flask(__name__)
@@ -11,17 +10,21 @@ app.secret_key = 'your_secret_key'
 # 壓縮邏輯
 def create_box(files):
     compressed_data = BytesIO()
-    with compressed_data:
-        compressed_data.write(struct.pack('I', len(files)))  # 寫入文件數量
-        for file in files:
-            filename = file.filename
-            file_data = file.read()  # 讀取文件數據
-            compressed = lzma.compress(file_data)  # 壓縮文件數據
-            
-            compressed_data.write(struct.pack('I', len(filename)))  # 寫入文件名長度
-            compressed_data.write(filename.encode('utf-8'))  # 寫入文件名
-            compressed_data.write(struct.pack('I', len(compressed)))  # 寫入壓縮數據長度
-            compressed_data.write(compressed)  # 寫入壓縮數據
+    
+    # 保持 BytesIO 開放狀態，寫入所有數據
+    num_files = len(files)
+    compressed_data.write(struct.pack('I', num_files))  # 寫入文件數量
+    
+    for file in files:
+        filename = file.filename
+        file_data = file.read()  # 讀取文件數據
+        compressed = lzma.compress(file_data)  # 壓縮文件數據
+        
+        # 寫入文件名和壓縮數據
+        compressed_data.write(struct.pack('I', len(filename)))  # 文件名長度
+        compressed_data.write(filename.encode('utf-8'))  # 文件名
+        compressed_data.write(struct.pack('I', len(compressed)))  # 壓縮數據長度
+        compressed_data.write(compressed)  # 壓縮數據
     
     compressed_data.seek(0)  # 重置讀取指針
     return compressed_data
@@ -29,26 +32,19 @@ def create_box(files):
 # 解壓縮邏輯
 def extract_box(file):
     extracted_files = []
-    with file:
-        num_files = struct.unpack('I', file.read(4))[0]  # 讀取文件數量
+    
+    # 使用 with 語句確保檔案正確處理
+    with file.stream as f:
+        num_files = struct.unpack('I', f.read(4))[0]  # 讀取文件數量
         for _ in range(num_files):
-            filename_length = struct.unpack('I', file.read(4))[0]  # 讀取文件名長度
-            filename = file.read(filename_length).decode('utf-8')  # 讀取文件名
-            compressed_size = struct.unpack('I', file.read(4))[0]  # 讀取壓縮數據長度
-            compressed_data = file.read(compressed_size)  # 讀取壓縮數據
+            filename_length = struct.unpack('I', f.read(4))[0]  # 讀取文件名長度
+            filename = f.read(filename_length).decode('utf-8')  # 讀取文件名
+            compressed_size = struct.unpack('I', f.read(4))[0]  # 讀取壓縮數據長度
+            compressed_data = f.read(compressed_size)  # 讀取壓縮數據
             decompressed_data = lzma.decompress(compressed_data)  # 解壓縮數據
             
             extracted_files.append((filename, decompressed_data))  # 存儲解壓縮的文件
     return extracted_files
-
-# 使用 zipfile 壓縮
-def create_zip(files):
-    zip_data = BytesIO()
-    with zipfile.ZipFile(zip_data, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for file in files:
-            zip_file.writestr(file.filename, file.read())  # 將文件寫入 zip
-    zip_data.seek(0)  # 重置讀取指針
-    return zip_data
 
 # 壓縮頁面
 @app.route('/')
@@ -120,11 +116,7 @@ def compare_files():
         box_data = create_box(files)  # 創建 .box 文件
         box_size = len(box_data.getvalue())  # 獲取 .box 文件大小
 
-        # 計算 .zip 的大小
-        zip_data = create_zip(files)  # 創建 .zip 文件
-        zip_size = len(zip_data.getvalue())  # 獲取 .zip 文件大小
-
-        return render_template('comparison_result.html', box_size=box_size, zip_size=zip_size)  # 顯示比較結果
+        return render_template('comparison_result.html', box_size=box_size)  # 顯示比較結果
     except Exception as e:
         flash(f'比較過程中出錯：{str(e)}')
         return redirect(url_for('compare_page'))
